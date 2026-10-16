@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@theme {
+  /* Typography — ฟอนต์ไทยเป็นหลัก */
+  --font-sans: "Noto Sans Thai Variable", "Noto Sans Thai", ui-sans-serif, system-ui, sans-serif;
+
+  /* Colors — Modern Minimal: พื้นขาว/สว่าง, ตัวอักษรเทาเข้ม, accent เดียว */
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+  --color-border: #e2e8f0;
+  --color-primary: #0f172a;
+  --color-primary-foreground: #ffffff;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  /* Spacing / Shadow */
+  --spacing-gutter: 1rem;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.06);
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
