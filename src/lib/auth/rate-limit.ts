@@ -17,6 +17,8 @@
  * เราไม่กล่าวอ้างว่ามันให้การป้องกันแบบ distributed
  */
 
+import { trustProxyHeaders } from '@/lib/auth/origin';
+
 export type RateLimitConfig = {
   /** จำนวนครั้งสูงสุดที่อนุญาตในหน้าต่างเวลา */
   limit: number;
@@ -28,6 +30,12 @@ export type RateLimitConfig = {
 export const LOGIN_RATE_LIMIT: RateLimitConfig = {
   limit: 5,
   windowMs: 15 * 60 * 1000,
+};
+
+/** อัปโหลดรูป: 60 ครั้ง / 5 นาที ต่อผู้ดูแล (กันการยิงถี่ผิดปกติ) */
+export const UPLOAD_RATE_LIMIT: RateLimitConfig = {
+  limit: 60,
+  windowMs: 5 * 60 * 1000,
 };
 
 type Bucket = {
@@ -107,13 +115,30 @@ export function resetRateLimits(): void {
 
 /**
  * ดึง IP ของผู้เรียกจาก header ที่ proxy ตั้งให้
- * Railway ตั้ง x-forwarded-for; ตัวซ้ายสุดคือ client จริง (เชื่อได้เฉพาะเมื่อมี proxy ที่เชื่อถือได้)
+ *
+ * ⚠️ ข้อควรระวังด้านความปลอดภัย
+ * ------------------------------------------------------------------
+ * `X-Forwarded-For` ปลอมได้จากฝั่งไคลเอนต์ (เป็นเพียง header)
+ * ถ้าไม่มี proxy ที่เชื่อถือได้เขียนทับ ผู้โจมตีจะปลอม IP เพื่อ "หมุน" rate limit ได้
+ * (ยิงอีเมลเดิมด้วย IP ปลอมที่ต่างกันทุกครั้ง)
+ *
+ * เราใช้ค่านี้เพื่อ "ชะลอ" เท่านั้น (defense-in-depth) — ไม่ใช่การรับประกัน
+ * ถ้าตั้ง `TRUST_PROXY_HEADERS=true` (อยู่หลัง Railway/proxy จริง) จึงเชื่อค่าซ้ายสุด
+ * ไม่เช่นนั้นใช้ค่าขวาสุดที่ proxy ตัวใกล้สุดอาจเติมให้ ซึ่งปลอมได้ยากกว่า
+ * และใช้ `x-real-ip` เป็นทางเลือกสำรอง
  */
 export function clientIpFromHeaders(headers: Headers): string {
   const forwarded = headers.get('x-forwarded-for');
   if (forwarded) {
-    const first = forwarded.split(',')[0]?.trim();
-    if (first) return first;
+    const parts = forwarded
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (parts.length > 0) {
+      // หลัง proxy ที่เชื่อถือได้: ตัวซ้ายสุดคือ client จริง
+      // ไม่มี proxy ที่เชื่อถือได้: ใช้ตัวขวาสุด (ใกล้ proxy ที่สุด) เพื่อลดการปลอม
+      return trustProxyHeaders() ? parts[0] : parts[parts.length - 1];
+    }
   }
   return headers.get('x-real-ip')?.trim() || 'unknown';
 }

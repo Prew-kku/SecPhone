@@ -45,9 +45,20 @@ describe('rate limit — sliding window', () => {
 });
 
 describe('clientIpFromHeaders', () => {
-  it('ใช้ค่าแรกของ x-forwarded-for', () => {
+  it('ไม่ trust proxy → ใช้ค่าขวาสุด (ลดการปลอมจากไคลเอนต์)', () => {
+    delete process.env.TRUST_PROXY_HEADERS;
     const headers = new Headers({ 'x-forwarded-for': '203.0.113.5, 10.0.0.1' });
-    expect(clientIpFromHeaders(headers)).toBe('203.0.113.5');
+    expect(clientIpFromHeaders(headers)).toBe('10.0.0.1');
+  });
+
+  it('trust proxy → ใช้ค่าซ้ายสุด (client จริงตามที่ proxy ระบุ)', () => {
+    process.env.TRUST_PROXY_HEADERS = 'true';
+    try {
+      const headers = new Headers({ 'x-forwarded-for': '203.0.113.5, 10.0.0.1' });
+      expect(clientIpFromHeaders(headers)).toBe('203.0.113.5');
+    } finally {
+      delete process.env.TRUST_PROXY_HEADERS;
+    }
   });
 
   it('fallback ไป x-real-ip', () => {

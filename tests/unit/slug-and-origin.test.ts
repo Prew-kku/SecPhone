@@ -95,22 +95,85 @@ describe('isTrustedOrigin — CSRF origin check', () => {
     expect(isTrustedOrigin(request)).toBe(true);
   });
 
-  it('ใช้ X-Forwarded-Host เมื่อมีการส่งมา (Railway/reverse proxy)', () => {
+  it('ยังปฏิเสธ Origin ที่ไม่ตรงกับ host ที่ส่งมา', () => {
+    const request = new Request('http://0.0.0.0:3000/api/auth/login', {
+      headers: { host: 'localhost:3000', origin: 'http://evil.example.com' },
+    });
+    expect(isTrustedOrigin(request)).toBe(false);
+  });
+
+  it('Railway: ใช้ Host สาธารณะที่ proxy ส่งมา (ไม่ต้องตั้งอะไรเพิ่ม)', () => {
     const request = new Request('http://0.0.0.0:3000/api/auth/login', {
       headers: {
-        'x-forwarded-host': 'secphone-production.up.railway.app',
-        host: '0.0.0.0:3000',
+        host: 'secphone-production.up.railway.app',
         origin: 'https://secphone-production.up.railway.app',
       },
     });
     expect(isTrustedOrigin(request)).toBe(true);
   });
 
-  it('ยังปฏิเสธ Origin ที่ไม่ตรงกับ host ที่ส่งมา', () => {
+  it('ไม่เชื่อ X-Forwarded-Host โดยปริยาย (กัน header spoofing)', () => {
+    // ผู้โจมตีตั้ง X-Forwarded-Host + Origin ให้ตรงกัน แต่ Host จริงไม่ตรง → ต้องปฏิเสธ
     const request = new Request('http://0.0.0.0:3000/api/auth/login', {
-      headers: { host: 'localhost:3000', origin: 'http://evil.example.com' },
+      headers: {
+        host: 'secphone-production.up.railway.app',
+        'x-forwarded-host': 'evil.example.com',
+        origin: 'https://evil.example.com',
+      },
     });
     expect(isTrustedOrigin(request)).toBe(false);
+  });
+
+  it('เชื่อ X-Forwarded-Host เฉพาะเมื่อตั้ง TRUST_PROXY_HEADERS=true', () => {
+    process.env.TRUST_PROXY_HEADERS = 'true';
+    try {
+      const request = new Request('http://0.0.0.0:3000/api/auth/login', {
+        headers: {
+          host: '0.0.0.0:3000',
+          'x-forwarded-host': 'secphone-production.up.railway.app',
+          origin: 'https://secphone-production.up.railway.app',
+        },
+      });
+      expect(isTrustedOrigin(request)).toBe(true);
+    } finally {
+      delete process.env.TRUST_PROXY_HEADERS;
+    }
+  });
+
+  it('SITE_URL: เทียบแบบเต็ม (scheme+host) เมื่อตั้งไว้', () => {
+    process.env.SITE_URL = 'https://shop.example.com';
+    try {
+      // Host header ภายในไม่ตรง แต่ SITE_URL ตรง → ผ่าน
+      const request = new Request('http://0.0.0.0:3000/api/auth/login', {
+        headers: { host: '0.0.0.0:3000', origin: 'https://shop.example.com' },
+      });
+      expect(isTrustedOrigin(request)).toBe(true);
+
+      // scheme ไม่ตรง (http vs https) → ไม่ผ่าน
+      const wrongScheme = new Request('http://0.0.0.0:3000/api/auth/login', {
+        headers: { host: '0.0.0.0:3000', origin: 'http://shop.example.com' },
+      });
+      expect(isTrustedOrigin(wrongScheme)).toBe(false);
+    } finally {
+      delete process.env.SITE_URL;
+    }
+  });
+
+  it('TRUSTED_ORIGINS แบบ URL เต็ม → เทียบ scheme+host', () => {
+    process.env.TRUSTED_ORIGINS = 'https://preview.example.com';
+    try {
+      const ok = new Request('http://0.0.0.0:3000/api/auth/login', {
+        headers: { host: '0.0.0.0:3000', origin: 'https://preview.example.com' },
+      });
+      expect(isTrustedOrigin(ok)).toBe(true);
+
+      const bad = new Request('http://0.0.0.0:3000/api/auth/login', {
+        headers: { host: '0.0.0.0:3000', origin: 'https://evil.example.com' },
+      });
+      expect(isTrustedOrigin(bad)).toBe(false);
+    } finally {
+      delete process.env.TRUSTED_ORIGINS;
+    }
   });
 });
 

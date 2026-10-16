@@ -120,6 +120,7 @@ npm run admin:create # สร้าง/อัปเดตบัญชีผู�
 | `/admin` | จัดการรายการสินค้า |
 | `/admin/phones/new` | เพิ่มสินค้า |
 | `/admin/phones/[id]/edit` | แก้ไขสินค้า |
+| `/api/admin/devices/[id]/images` | อัปโหลดรูปสินค้า (ต้องล็อกอิน — ส่งทีละไฟล์, จำกัดขนาดก่อน parse) |
 
 ---
 
@@ -140,7 +141,9 @@ npm run admin:create # สร้าง/อัปเดตบัญชีผู�
 | `SEED_DEMO_ADMIN` | — | `true` = ให้ seed สร้างบัญชีผู้ดูแลด้วย |
 | `SEED_OVERWRITE` | — | `true` = อนุญาตให้ seed **เขียนทับ** ข้อมูลเดิม (ค่าเริ่มต้น create-only) |
 | `UPLOAD_DIR` | — | โฟลเดอร์เก็บรูป (`/app/uploads` ใน container, เว้นว่าง = `./uploads` เมื่อรัน local) |
-| `MAX_UPLOAD_MB` | — | ขนาดรูปสูงสุด (MB) |
+| `MAX_UPLOAD_MB` | — | ขนาดรูปสูงสุด (MB) — ฝั่ง server ตรวจขนาด **ก่อน** parse body |
+| `TRUSTED_ORIGINS` | — | host เพิ่มเติมที่อนุญาตในการตรวจ Origin (คั่นด้วย comma; รับ host หรือ URL เต็ม) |
+| `TRUST_PROXY_HEADERS` | — | `true` = เชื่อ `X-Forwarded-Host`/`X-Forwarded-For` จาก reverse proxy (ตั้งเฉพาะเมื่ออยู่หลัง proxy ที่เชื่อถือได้ เช่น Railway) |
 | `COOKIE_SECURE` | — | `true` (ค่าเริ่มต้น) ตั้ง cookie แบบ secure — ปิดเฉพาะเมื่อทดสอบบน http |
 
 ---

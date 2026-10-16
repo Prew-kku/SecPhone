@@ -6,7 +6,6 @@ import type { DeviceStatus } from '@prisma/client';
 import { requireAdmin } from '@/lib/auth/guard';
 import {
   DeviceMutationError,
-  addDeviceImages,
   changeDeviceStatus,
   createDevice,
   deleteDeviceImage,
@@ -25,7 +24,6 @@ import {
   setPrimaryImageSchema,
   statusChangeSchema,
 } from '@/lib/validation/device';
-import { MAX_FILES_PER_REQUEST, maxUploadBytes } from '@/lib/storage/upload';
 
 /**
  * Server actions สำหรับ admin — **ทุกตัวเรียก requireAdmin() เป็นบรรทัดแรกเสมอ**
@@ -71,12 +69,6 @@ function pickFormValues(formData: FormData): Record<string, unknown> {
     values[key] = typeof raw === 'string' ? raw : undefined;
   }
   return values;
-}
-
-/** แปลง File → Uint8Array พร้อมตรวจขนาดก่อนอ่านทั้งหมด */
-async function fileToBytes(file: File): Promise<Uint8Array> {
-  const buffer = await file.arrayBuffer();
-  return new Uint8Array(buffer);
 }
 
 function revalidateDeviceViews(deviceId?: string) {
@@ -216,45 +208,13 @@ export async function softDeleteDeviceAction(deviceId: string): Promise<ActionRe
 /* Images                                                              */
 /* ------------------------------------------------------------------ */
 
-export async function uploadImagesAction(deviceId: string, formData: FormData): Promise<ActionResult> {
-  await requireAdmin();
-
-  if (!/^[a-z0-9]{1,64}$/i.test(deviceId)) {
-    return { ok: false, error: 'รหัสสินค้าไม่ถูกต้อง' };
-  }
-
-  const files = formData.getAll('images').filter((entry): entry is File => entry instanceof File && entry.size > 0);
-
-  if (files.length === 0) return { ok: false, error: 'กรุณาเลือกรูปอย่างน้อย 1 รูป' };
-  if (files.length > MAX_FILES_PER_REQUEST) {
-    return { ok: false, error: `อัปโหลดได้ครั้งละไม่เกิน ${MAX_FILES_PER_REQUEST} รูป` };
-  }
-  if (files.some((file) => file.size > maxUploadBytes())) {
-    return {
-      ok: false,
-      error: `ขนาดรูปต้องไม่เกิน ${Math.floor(maxUploadBytes() / (1024 * 1024))} MB ต่อรูป`,
-    };
-  }
-
-  try {
-    const buffers = await Promise.all(files.map(fileToBytes));
-    const result = await addDeviceImages(deviceId, buffers);
-    revalidateDeviceViews(deviceId);
-
-    if (result.added === 0) {
-      return { ok: false, error: result.failures[0] ?? 'อัปโหลดไม่สำเร็จ' };
-    }
-    const message =
-      result.failures.length > 0
-        ? `อัปโหลด ${result.added} รูปสำเร็จ (${result.failures.length} รูปถูกปฏิเสธ)`
-        : `อัปโหลด ${result.added} รูปสำเร็จ`;
-    return { ok: true, message };
-  } catch (error) {
-    if (error instanceof DeviceMutationError) return { ok: false, error: error.message };
-    console.error('[admin] uploadImages ล้มเหลว', error instanceof Error ? error.message : error);
-    return { ok: false, error: 'อัปโหลดรูปไม่สำเร็จ' };
-  }
-}
+/**
+ * หมายเหตุ: การอัปโหลดรูป **ไม่ใช่** server action อีกต่อไป
+ * เพราะ server action ของ Next.js จำกัด body ~1 MB ซึ่งเล็กกว่าขนาดไฟล์ที่รองรับ
+ * (สูงสุด 8 MB) เราใช้ Route Handler `POST /api/admin/devices/[id]/images`
+ * ที่อ่านสตรีมแบบจำกัดขนาดแทน (ดู `src/lib/http/limited-body.ts`)
+ * การลบ/ตั้งรูปหลัก/เรียงลำดับ ยังเป็น action ด้านล่างตามเดิม
+ */
 
 export async function deleteImageAction(deviceId: string, imageId: string): Promise<ActionResult> {
   await requireAdmin();

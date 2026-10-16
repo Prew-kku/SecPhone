@@ -1,16 +1,40 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-  changeDeviceStatus,
-  createDevice,
-  setDeviceFeatured,
-  softDeleteDevice,
-  updateDevice,
-} from '@/lib/mutations/devices';
-import { getAdminDevices, getAdminStats } from '@/lib/queries/admin-devices';
-import { getCatalog } from '@/lib/queries/catalog';
-import { getDeviceBySlug } from '@/lib/queries/devices';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { AdminRole } from '@prisma/client';
+import { SESSION_COOKIE_NAME, signSession } from '@/lib/auth/session';
 import type { DeviceFields } from '@/lib/validation/device';
 import { canConnect, cleanTransactionalData, prisma } from './helpers';
+
+/**
+ * admin query ต่าง ๆ บังคับ `requireAdmin()` ที่ชั้น data-access (issue #3)
+ * การอ่านข้อมูลหลังบ้านจึงต้องมีเซสชันจริง
+ *
+ * เราจำลองเฉพาะ cookie store (`next/headers`) ให้คืน token ที่เซ็นด้วย JWT_SECRET จริง
+ * ส่วนการตรวจบัญชี (`prisma.adminUser.findUnique`) และ query อื่น ๆ ใช้ DB จริง
+ * การ mock นี้จำเป็นเพราะ `next/headers` ต้องมี request scope ของ Next.js
+ */
+
+let currentCookie: { name: string; value: string } | undefined;
+
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    get: (name: string) => (currentCookie?.name === name ? currentCookie : undefined),
+    set: () => {},
+  }),
+}));
+
+const { changeDeviceStatus, createDevice, setDeviceFeatured, softDeleteDevice, updateDevice } =
+  await import('@/lib/mutations/devices');
+const { getAdminDevices, getAdminStats, getAdminDeviceById } = await import('@/lib/queries/admin-devices');
+const { getCatalog } = await import('@/lib/queries/catalog');
+const { getDeviceBySlug } = await import('@/lib/queries/devices');
+
+const SECRET = 'integration-admin-session-secret-32-chars';
+process.env.JWT_SECRET = SECRET;
+
+async function signIn(payload: { sub: string; email: string; role: AdminRole }) {
+  const token = await signSession(payload, SECRET);
+  currentCookie = { name: SESSION_COOKIE_NAME, value: token };
+}
 
 let dbAvailable = false;
 let adminId = '';
@@ -28,6 +52,7 @@ beforeAll(async () => {
     },
   });
   adminId = admin.id;
+  await signIn({ sub: admin.id, email: admin.email, role: 'OWNER' });
 });
 
 afterAll(async () => {
@@ -189,6 +214,9 @@ describe.skipIf(!process.env.DATABASE_URL)('visibility — สถานะมี
         role: 'OWNER',
       },
     });
+    // ต้องมีเซสชันของผู้ดูแลคนใหม่ (requireAdmin ตรวจสถานะบัญชีจาก DB)
+    await signIn({ sub: owner.id, email: owner.email, role: 'OWNER' });
+
     await createDevice(fields({ newModelName: 'S1', status: 'AVAILABLE' }), owner.id);
     await createDevice(fields({ newModelName: 'S2', status: 'AVAILABLE' }), owner.id);
     await createDevice(fields({ newModelName: 'S3', status: 'DRAFT' }), owner.id);
@@ -197,5 +225,31 @@ describe.skipIf(!process.env.DATABASE_URL)('visibility — สถานะมี
     expect(stats.available).toBe(2);
     expect(stats.draft).toBe(1);
     expect(stats.total).toBe(3);
+  });
+
+  it('admin read ปฏิเสธเมื่อไม่มีเซสชัน (issue #3 — data-access boundary)', async () => {
+    if (!dbAvailable) return;
+    currentCookie = undefined;
+    await expect(getAdminDevices({})).rejects.toThrow();
+    await expect(getAdminStats()).rejects.toThrow();
+    await expect(getAdminDeviceById('whatever')).rejects.toThrow();
+    // คืนเซสชันกลับเพื่อไม่กระทบเทสต์ถัดไป
+    await signIn({ sub: adminId, email: 'owner@example.test', role: 'OWNER' });
+  });
+
+  it('admin read ปฏิเสธเมื่อบัญชีถูกปิดใช้งาน', async () => {
+    if (!dbAvailable) return;
+    const disabled = await prisma.adminUser.create({
+      data: {
+        email: `disabled-${Date.now()}@example.test`,
+        passwordHash: 'x',
+        displayName: 'Disabled',
+        role: 'OWNER',
+        isActive: false,
+      },
+    });
+    await signIn({ sub: disabled.id, email: disabled.email, role: 'OWNER' });
+    await expect(getAdminDevices({})).rejects.toThrow();
+    await signIn({ sub: adminId, email: 'owner@example.test', role: 'OWNER' });
   });
 });

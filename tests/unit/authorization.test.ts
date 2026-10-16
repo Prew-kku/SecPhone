@@ -28,7 +28,6 @@ const {
   changeStatusAction,
   toggleFeaturedAction,
   softDeleteDeviceAction,
-  uploadImagesAction,
   deleteImageAction,
   setPrimaryImageAction,
   reorderImagesAction,
@@ -106,10 +105,6 @@ describe('authorization matrix — ทุก mutation ปฏิเสธเม�
     { name: 'changeStatusAction', run: () => changeStatusAction('dev1', 'SOLD') },
     { name: 'toggleFeaturedAction', run: () => toggleFeaturedAction('dev1', true) },
     { name: 'softDeleteDeviceAction', run: () => softDeleteDeviceAction('dev1') },
-    {
-      name: 'uploadImagesAction',
-      run: () => uploadImagesAction('dev1', formData({})),
-    },
     { name: 'deleteImageAction', run: () => deleteImageAction('dev1', 'img1') },
     { name: 'setPrimaryImageAction', run: () => setPrimaryImageAction('dev1', 'img1') },
     { name: 'reorderImagesAction', run: () => reorderImagesAction('dev1', ['img1']) },

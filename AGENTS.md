@@ -6,6 +6,7 @@
 - **Phase 1: เสร็จครบ (1.1–1.13)** — โครง Next.js 15 + TS + Tailwind 4 + Prisma 6 + migration + Prisma client singleton + seed idempotent (14 devices) + placeholder assets + `scripts/create-admin.ts` + `.dockerignore` + Dockerfile/compose/entrypoint
 - **Phase 2: Public Storefront เสร็จและตรวจแล้ว** — `/`, `/phones`, `/phones/[slug]`, sitemap, robots, `/api/images/[...path]`
 - **Phase 3: Admin System เสร็จครบ (3.1–3.16) และตรวจใน container จริงแล้ว (2026-10-16)** — login/logout, session JWT (httpOnly cookie), bcrypt cost 12, rate limit, CRUD device, upload รูป (sharp→webp), status/featured/soft-delete, authorization matrix (`requireAdmin` ทุก server action)
+- **PR #3 review fixes เสร็จและตรวจแล้ว (2026-10-16)** — (HIGH) ย้ายอัปโหลดรูปไป route handler เพราะ server action จำกัด body ~1 MB + จำกัดขนาดก่อน parse; (MEDIUM) `requireAdmin()` ที่ชั้น data-access ของ `admin-devices.ts`; (MEDIUM) origin ไม่เชื่อ `X-Forwarded-Host` โดยปริยาย (ต้อง `TRUST_PROXY_HEADERS=true`) + `clientIpFromHeaders` ใช้ค่าขวาสุดโดยค่าเริ่มต้น + rate limit การอัปโหลด; (MEDIUM) เอกสาร Railway volume persistence ใน `docs/DEPLOYMENT.md`
 - **Security & Railway Hardening เสร็จและตรวจแล้ว (2026-10-16)** — branch `security/railway-hardening` (14 tasks): JSON-LD escape + regression test, image endpoint symlink defense, `/api/health`, seed non-destructive + `SEED_DEMO_ADMIN`, `SITE_URL`/Railway-aware base URL, demo-mode disclosure, Docker production fixes, vitest infra, README + `docs/DEPLOYMENT.md`
 - ทำจริงกับ PostgreSQL แล้ว (ไม่ใช่ UNVERIFIED) — migration apply + `migrate deploy` + seed idempotent + query ผ่าน Prisma client จริง
 - **Docker Path A ตรวจซ้ำพร้อม Phase 3 (2026-10-16)** — `docker compose up -d --build` สำเร็จ, `db` + `web` healthy, login ผ่าน cookie จริงได้ (200), จำกัด login 5 ครั้ง/15 นาทีทำงาน (ครั้งที่ 6 = 429), รูปใน volume ยังเสิร์ฟหลัง `restart` (200), symlink/path traversal → 404, `sharp` โหลดได้ใน container (webp 76 bytes)
@@ -15,8 +16,9 @@
 ### Phase 3 — Admin System บทเรียนสำคัญ (2026-10-16)
 
 1. **`isTrustedOrigin` ต้องอ่าน host จาก header ไม่ใช่ `request.url`** — ใน container `HOSTNAME=0.0.0.0` ทำให้ `request.url` เป็น `http://0.0.0.0:3000` แต่เบราว์เซอร์ส่ง `Origin: http://localhost:3000` → login POST ได้ **403 ทุกครั้ง** (เจอเฉพาะตอนรันใน Docker ไม่เจอใน unit test ที่สร้าง `Request` เอง)
-   - แก้: `requestHost()` อ่านลำดับ `X-Forwarded-Host` → `Host` → host ของ `request.url` (ดู `src/lib/auth/origin.ts`)
-   - มี regression test 3 ตัวใหม่ใน `tests/unit/slug-and-origin.test.ts` (เคส container 0.0.0.0, X-Forwarded-Host ของ Railway, และยังปฏิเสธ origin แปลก)
+   - แก้: `requestHost()` อ่านลำดับ `Host` → host ของ `request.url` (ดู `src/lib/auth/origin.ts`)
+   - **ปรับปรุงเพิ่ม (PR #3 review):** `X-Forwarded-Host` เชื่อเฉพาะเมื่อตั้ง `TRUST_PROXY_HEADERS=true` เท่านั้น — ก่อนหน้านี้เชื่อโดยปริยาย ซึ่ง JS ฝั่งเบราว์เซอร์ปลอม header นี้ได้และทำให้ bypass origin check ได้; และรองรับ allowlist `SITE_URL` / `TRUSTED_ORIGINS` (เทียบ scheme+host เมื่อ entry เป็น URL เต็ม)
+   - มี regression test ใน `tests/unit/slug-and-origin.test.ts` (เคส container 0.0.0.0, Host สาธารณะของ Railway, ปฏิเสธ X-Forwarded-Host ที่ปลอม, SITE_URL scheme mismatch, และยังปฏิเสธ origin แปลก)
    - **บทเรียน:** ตรรกะที่พึ่ง `request.url` ต้องทดสอบใน container จริง ไม่ใช่แค่ unit test
 
 2. **middleware ทำหน้าที่แค่ routing** — การตรวจสิทธิ์จริงอยู่ที่ `requireAdmin()` ในทุก server action (JWT + สถานะบัญชีใน DB + role) ไม่เชื่อ middleware อย่างเดียว
@@ -30,6 +32,17 @@
 6. **rate limiter เป็น in-memory** — จำกัดต่อ process ไม่ distributed; บน Railway หลาย instance/restart ตัวนับแยกกัน → เป็น defense-in-depth เท่านั้น (ไม่กล่าวอ้างว่า distributed)
 
 7. **`sharp` ถูก trace เข้า `.next/standalone`** — พบ `@img/sharp-linux-x64-0.35.5.node` ใน standalone output → Docker build COPY ได้; ยืนยันด้วย `node -e "require('sharp')"` ใน container
+
+8. **Server Action จำกัด body ~1 MB → อัปโหลดรูปต้องใช้ Route Handler (PR #3 review, HIGH)** — เดิม `uploadImagesAction` (server action) รับไฟล์สูงสุด 8 MB แต่ Next.js จำกัด request body ของ server action ไว้ ~1 MB ทำให้ไฟล์ใหญ่กว่า 1 MB อัปโหลดไม่ผ่านจริง
+   - แก้: ย้ายการอัปโหลดไปที่ `POST /api/admin/devices/[id]/images` (route handler) ที่ตรวจ origin + `getCurrentAdmin()` + rate limit + จำกัดขนาดด้วย `readFormDataWithLimit()` (`src/lib/http/limited-body.ts`) **ก่อน** parse
+   - ฝั่ง client ส่ง **ทีละไฟล์ต่อ request** (loop) เพื่อคุมหน่วยความจำ — ไม่รับ 10×8 MB ก้อนเดียว
+   - action ที่เหลือ (ลบ/ตั้งรูปหลัก/เรียง) ยังเป็น server action ที่เรียก `requireAdmin()` ตามเดิม
+   - พิสูจน์ e2e แล้ว: อัปโหลด PNG 3.1 MB → 200, ไฟล์ 9 MB → 413, ไม่มีเซสชัน → 401, origin แปลก → 403, รูปยังเสิร์ฟ 200 หลัง restart server
+
+9. **การอ่านข้อมูลหลังบ้านบังคับ auth ที่ชั้น data-access (PR #3 review, MEDIUM)** — `src/lib/queries/admin-devices.ts` ทุกฟังก์ชัน (`getAdminDevices`, `getAdminStats`, `getAdminDeviceById`, `getBrandOptions`) เรียก `requireAdmin()` เป็นบรรทัดแรก ไม่พึ่ง layout/middleware เพียงอย่างเดียว → server component ที่ import ไปใช้จะอ่านข้อมูลหลังบ้านไม่ได้ถ้าไม่มีเซสชัน
+   - integration test ใช้ mock เฉพาะ `next/headers` (cookie store) แต่ยังใช้ DB จริงและเซ็น token จริง เพื่อพิสูจน์เส้นทาง auth
+
+10. **rate limit ที่อิง IP ปลอมได้** — `X-Forwarded-For` เป็นเพียง header ถ้าไม่มี proxy ที่เชื่อถือได้เขียนทับ ผู้โจมตีหมุน IP เพื่อเลี่ยง rate limit ได้ → ค่าเริ่มต้นใช้ค่าขวาสุด (ใกล้ proxy ที่สุด), ใช้ค่าซ้ายสุดเฉพาะเมื่อ `TRUST_PROXY_HEADERS=true`
 
 ### Security & Railway Hardening — บทเรียนสำคัญ (2026-10-16)
 
@@ -188,7 +201,7 @@ sudo docker run -d --name sp-verify-db \
 
 ## UNVERIFIED (ยังไม่ยืนยัน — อย่ากล่าวอ้างว่าผ่าน)
 - **Railway deploy จริง** — ไม่ได้ deploy ขึ้น Railway ในเซสชันนี้ (ไม่มี credential/target); config (`railway.json`, entrypoint, `SITE_URL` fallback) เตรียมไว้และตรวจด้วย unit test + Docker build บนเครื่องแล้ว
-- **การอัปโหลดรูปจริงผ่าน admin** — พิสูจน์แล้วว่า pipeline `sharp` ทำงาน (เขียน webp ผ่าน `sharp` ใน container แล้วเสิร์ฟผ่าน `/api/images` ได้ 200); flow อัปโหลดผ่าน UI เบราว์เซอร์ยังไม่ได้ทดสอบ end-to-end (ข้อจำกัดของ browser tooling ในเซสชันนี้) แต่ server action + storage ถูกทดสอบด้วย integration test
+- **การอัปโหลดรูปจริงผ่าน admin** — พิสูจน์ e2e แล้ว (PR #3 review): `POST /api/admin/devices/[id]/images` รับ PNG 3.1 MB → 200 (เขียน webp ผ่าน `sharp`), 9 MB → 413, ไม่มีเซสชัน → 401, origin แปลก → 403, และรูปยังเสิร์ฟ 200 หลัง restart server; flow ผ่าน UI เบราว์เซอร์ (กดปุ่มเลือกไฟล์จริง) ยังไม่ได้ทดสอบด้วย browser tooling แต่ client component ใช้ endpoint เดียวกันที่ทดสอบแล้ว
 
 ### ตรวจแล้ว (Docker Path A) — 2026-10-16
 - `docker compose up -d --build` สำเร็จ, `db` + `web` healthy ทั้งคู่

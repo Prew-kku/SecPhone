@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { SESSION_COOKIE_NAME } from '@/lib/auth/session';
+import { SESSION_COOKIE_NAME, shouldUseSecureCookie } from '@/lib/auth/session';
 import { isTrustedOrigin } from '@/lib/auth/origin';
 
 export const dynamic = 'force-dynamic';
@@ -19,10 +19,12 @@ export async function POST(request: Request) {
   }
 
   const response = NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+  // ต้องส่ง attribute ให้ตรงกับตอนตั้ง cookie (secure/sameSite/path) ไม่งั้นเบราว์เซอร์บางตัวไม่ล้างให้
   response.cookies.set({
     name: SESSION_COOKIE_NAME,
     value: '',
     httpOnly: true,
+    secure: shouldUseSecureCookie(),
     path: '/',
     maxAge: 0,
     sameSite: 'lax',

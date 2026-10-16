@@ -1,10 +1,17 @@
 import { Prisma, type DeviceStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { resolveImageSrc } from '@/lib/storage/paths';
+import { requireAdmin } from '@/lib/auth/guard';
 
 /**
  * READ queries สำหรับหน้า admin (เห็นทุกสถานะ รวม DRAFT/ARCHIVED)
  * แยกจาก src/lib/queries/devices.ts ที่กรองเฉพาะ AVAILABLE/SOLD สำหรับ public
+ *
+ * ⚠️ การอนุญาต (authorization) บังคับที่ **ชั้น data-access นี้เอง** ไม่ใช่พึ่ง layout
+ * หรือ middleware เพียงอย่างเดียว — ทุกฟังก์ชันที่คืนข้อมูลหลังบ้านเรียก
+ * `requireAdmin()` เป็นบรรทัดแรก (ตรวจ JWT + สถานะบัญชีจาก DB ทุกครั้ง)
+ * เหตุผล: server component ใด ๆ ที่ import ฟังก์ชันนี้จะไม่สามารถอ่านข้อมูลหลังบ้าน
+ * ได้โดยไม่ผ่านการตรวจ แม้จะถูกเรียกนอกหน้า admin ก็ตาม
  */
 
 export type AdminDeviceRow = {
@@ -82,6 +89,8 @@ export type AdminDeviceFilter = {
 
 /** รายการสินค้าทั้งหมดสำหรับตาราง admin (ไม่รวมที่ soft-deleted) */
 export async function getAdminDevices(filter: AdminDeviceFilter = {}): Promise<AdminDeviceRow[]> {
+  await requireAdmin();
+
   const where: Prisma.DeviceWhereInput = { deletedAt: null };
 
   if (filter.status) where.status = filter.status;
@@ -115,6 +124,8 @@ export type AdminStats = {
 
 /** สถิติสำหรับ dashboard */
 export async function getAdminStats(): Promise<AdminStats> {
+  await requireAdmin();
+
   const base: Prisma.DeviceWhereInput = { deletedAt: null };
 
   const [grouped, featured] = await Promise.all([
@@ -182,6 +193,8 @@ export type AdminDeviceDetail = {
 
 /** รายละเอียดสินค้าสำหรับหน้า edit (ทุกสถานะ) */
 export async function getAdminDeviceById(id: string): Promise<AdminDeviceDetail | null> {
+  await requireAdmin();
+
   const row = await prisma.device.findUnique({
     where: { id },
     select: {
@@ -264,6 +277,8 @@ export type BrandOption = {
 };
 
 export async function getBrandOptions(): Promise<BrandOption[]> {
+  await requireAdmin();
+
   const brands = await prisma.brand.findMany({
     orderBy: { name: 'asc' },
     select: {

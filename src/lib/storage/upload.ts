@@ -22,8 +22,21 @@ export function maxUploadBytes(): number {
   return Math.floor(mb * 1024 * 1024);
 }
 
-/** จำนวนไฟล์สูงสุดต่อ request (PLAN §8.3) */
+/** จำนวนไฟล์สูงสุดต่อสินค้าในการอัปโหลดหนึ่งชุด (แต่ละ request ส่งได้ทีละไฟล์) */
 export const MAX_FILES_PER_REQUEST = 10;
+
+/** เพดาน multipart overhead ต่อ request (boundary/headers/padding) */
+const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
+
+/**
+ * ขนาดร่างกาย request สูงสุดที่ยอมรับ (bytes)
+ *
+ * ออกแบบให้ **หนึ่ง request = หนึ่งไฟล์** เพื่อให้หน่วยความจำถูกจำกัด
+ * (ไม่รับ 10 × 8 MB เป็นก้อนเดียว) — ค่า = เพดานไฟล์ + overhead
+ */
+export function maxRequestBytes(): number {
+  return maxUploadBytes() + MULTIPART_OVERHEAD_BYTES;
+}
 
 /** ย่อด้านยาวสุดไม่เกิน 1600px */
 const MAX_DIMENSION = 1600;
