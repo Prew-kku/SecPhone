@@ -1,15 +1,16 @@
 import type { Metadata } from 'next';
 import '@fontsource-variable/noto-sans-thai';
 import './globals.css';
-import { getSiteConfig } from '@/lib/site-config';
+import { getSiteConfig, isDemoMode } from '@/lib/site-config';
+import { getSiteUrl } from '@/lib/site-url';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { DemoBanner } from '@/components/layout/demo-banner';
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = getSiteConfig();
-  const siteUrl = process.env.SITE_URL ?? 'http://localhost:3000';
   return {
-    metadataBase: new URL(siteUrl),
+    metadataBase: new URL(getSiteUrl()),
     title: {
       default: `${config.name} — สมาร์ทโฟนมือสองคุณภาพคัดสรร`,
       template: `%s | ${config.name}`,
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           ข้ามไปยังเนื้อหาหลัก
         </a>
         <SiteHeader siteName={config.name} />
+        {isDemoMode() ? <DemoBanner /> : null}
         <div id="main" className="flex-1">
           {children}
         </div>

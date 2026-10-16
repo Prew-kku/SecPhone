@@ -3,7 +3,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft, PackageX } from 'lucide-react';
 import { getDeviceBySlug } from '@/lib/queries/devices';
-import { getSiteConfig } from '@/lib/site-config';
+import { serializeJsonLd } from '@/lib/json-ld';
+import { getSiteConfig, isDemoMode } from '@/lib/site-config';
+import { getSiteUrl } from '@/lib/site-url';
 import { conditionLabel } from '@/lib/device-labels';
 import { formatStorage, formatTHB } from '@/lib/format';
 import { DeviceGallery } from '@/components/product/device-gallery';
@@ -54,7 +56,8 @@ export default async function DeviceDetailPage({ params }: { params: Promise<Par
   const config = getSiteConfig();
   const title = `${device.brandName} ${device.modelName}`;
   const sold = device.status === 'SOLD';
-  const siteUrl = process.env.SITE_URL ?? 'http://localhost:3000';
+  const siteUrl = getSiteUrl();
+  const demo = isDemoMode();
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -97,7 +100,8 @@ export default async function DeviceDetailPage({ params }: { params: Promise<Par
       <script
         type="application/ld+json"
         // ข้อมูลมาจากฐานข้อมูลของร้าน ไม่มีข้อมูลอ่อนไหว
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        // ใช้ serializeJsonLd เพื่อ escape < > & ป้องกันการปิดแท็ก script (XSS)
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
       />
 
       <nav aria-label="เส้นทางนำทาง" className="mb-6">
@@ -199,6 +203,14 @@ export default async function DeviceDetailPage({ params }: { params: Promise<Par
 
           <div className="mt-10">
             <SpecTable rows={specRows} title="ข้อมูลจำเพาะและสภาพเครื่อง" />
+            {demo ? (
+              <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+                ข้อมูลสภาพ แบตเตอรี่ ประวัติซ่อม และการรับประกันในหน้านี้เป็น
+                <strong className="font-semibold"> ข้อมูลตัวอย่างสำหรับสาธิตระบบ</strong>{' '}
+                ไม่ได้มาจากการตรวจสอบเครื่องจริง และไม่ถือเป็นข้อเสนอขายหรือการรับประกัน
+                โปรดยืนยันรายละเอียดกับร้านก่อนตัดสินใจ
+              </p>
+            ) : null}
           </div>
         </div>
 

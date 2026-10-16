@@ -40,11 +40,14 @@ services:
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-8}
       RUN_SEED: ${RUN_SEED:-false}
       SEED_DEMO_ADMIN: ${SEED_DEMO_ADMIN:-false}
+      SEED_OVERWRITE: ${SEED_OVERWRITE:-false}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_NAME: ${ADMIN_NAME:-}
       # อ่านที่ runtime ฝั่ง server (ไม่ถูก inline ตอน build เหมือน NEXT_PUBLIC_*)
+      SITE_URL: ${SITE_URL:-http://localhost:3000}
       SITE_NAME: ${SITE_NAME:-SecondPhone Store}
+      DEMO_MODE: ${DEMO_MODE:-true}
       LINE_ID: ${LINE_ID:-}
       FACEBOOK_URL: ${FACEBOOK_URL:-}
       PHONE_NUMBER: ${PHONE_NUMBER:-}

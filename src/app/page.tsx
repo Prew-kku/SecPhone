@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { getSiteConfig } from '@/lib/site-config';
+import { getSiteConfig, isDemoMode } from '@/lib/site-config';
 import { ContactSection, HeroSection } from '@/components/layout/home-sections';
 import { HomeCatalog } from '@/components/layout/home-catalog';
 import { HomeCatalogSkeleton } from '@/components/layout/home-catalog-skeleton';
@@ -12,7 +12,7 @@ export default function HomePage() {
 
   return (
     <main>
-      <HeroSection config={config} />
+      <HeroSection config={config} demo={isDemoMode()} />
       <Suspense fallback={<HomeCatalogSkeleton />}>
         <HomeCatalog />
       </Suspense>

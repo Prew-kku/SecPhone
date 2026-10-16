@@ -337,11 +337,31 @@ const devices: DeviceSeed[] = [
 async function main() {
   console.log('เริ่ม seed ข้อมูลสาธิต SecondPhone Store...');
 
+  // ---------- นโยบายความปลอดภัยของ seed ----------
+  // ค่าเริ่มต้นคือ "create-only": ถ้ามีระเบียนอยู่แล้วจะไม่แตะเลย
+  // เพื่อไม่ให้ทับข้อมูลที่ผู้ดูแลแก้ไขผ่านระบบหลังบ้าน (ราคา/สถานะ/รูป)
+  // ต้องตั้ง SEED_OVERWRITE=true อย่างชัดเจนจึงจะเขียนทับได้
+  const overwrite = process.env.SEED_OVERWRITE?.trim().toLowerCase() === 'true';
+
+  const existingRealDevices = await prisma.device.count({
+    where: { NOT: { sku: { startsWith: 'DEMO-' } } },
+  });
+  if (existingRealDevices > 0) {
+    console.warn(
+      `[seed] พบสินค้าที่ไม่ใช่ข้อมูลสาธิต ${existingRealDevices} รายการ — ` +
+        `seed จะไม่แก้ไขข้อมูลใด ๆ (create-only)`,
+    );
+  }
+  console.log(
+    `[seed] โหมด: ${overwrite ? 'overwrite (เขียนทับได้)' : 'create-only (ไม่ทับข้อมูลเดิม)'}`,
+  );
+
   const brandIdBySlug = new Map<string, string>();
   for (const brand of brands) {
     const row = await prisma.brand.upsert({
       where: { slug: brand.slug },
-      update: { name: brand.name },
+      // create-only: update เป็น no-op เว้นแต่สั่ง overwrite
+      update: overwrite ? { name: brand.name } : {},
       create: { name: brand.name, slug: brand.slug },
     });
     brandIdBySlug.set(brand.slug, row.id);
@@ -353,7 +373,7 @@ async function main() {
     if (!brandId) throw new Error(`ไม่พบแบรนด์ slug "${model.brandSlug}"`);
     const row = await prisma.phoneModel.upsert({
       where: { slug: model.slug },
-      update: { name: model.name, brandId, releaseYear: model.releaseYear },
+      update: overwrite ? { name: model.name, brandId, releaseYear: model.releaseYear } : {},
       create: {
         slug: model.slug,
         name: model.name,
@@ -388,7 +408,8 @@ async function main() {
 
     await prisma.device.upsert({
       where: { sku: device.sku },
-      update: fields,
+      // create-only: รันซ้ำจะไม่รีเซ็ตราคา/สถานะที่ผู้ดูแลแก้ไว้
+      update: overwrite ? fields : {},
       create: {
         sku: device.sku,
         slug: device.sku.toLowerCase(),
@@ -398,15 +419,44 @@ async function main() {
     });
   }
 
-  const [brandCount, modelCount, deviceCount, imageCount] = await Promise.all([
+  // ---------- Admin สาธิต (เฉพาะเมื่อสั่งอย่างชัดเจน) ----------
+  // ไม่มี public admin registration — บัญชีผู้ดูแลสร้างผ่าน seed หรือ scripts/create-admin.ts เท่านั้น
+  if (process.env.SEED_DEMO_ADMIN?.trim().toLowerCase() === 'true') {
+    const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+    const password = process.env.ADMIN_PASSWORD ?? '';
+    if (!email || !password) {
+      console.warn('[seed] SEED_DEMO_ADMIN=true แต่ไม่มี ADMIN_EMAIL/ADMIN_PASSWORD — ข้ามการสร้าง admin');
+    } else {
+      const bcrypt = (await import('bcryptjs')).default;
+      const passwordHash = await bcrypt.hash(password, 12);
+      await prisma.adminUser.upsert({
+        where: { email },
+        // ไม่รีเซ็ตรหัสผ่าน/ชื่อของ admin ที่มีอยู่แล้ว เว้นแต่สั่ง overwrite
+        update: overwrite
+          ? { passwordHash, displayName: process.env.ADMIN_NAME?.trim() || 'ผู้ดูแลร้าน' }
+          : {},
+        create: {
+          email,
+          passwordHash,
+          displayName: process.env.ADMIN_NAME?.trim() || 'ผู้ดูแลร้าน',
+          role: 'OWNER',
+        },
+      });
+      console.log(`[seed] เตรียมบัญชีผู้ดูแลสาธิตสำหรับ ${email} แล้ว`);
+    }
+  }
+
+  const [brandCount, modelCount, deviceCount, imageCount, adminCount] = await Promise.all([
     prisma.brand.count(),
     prisma.phoneModel.count(),
     prisma.device.count(),
     prisma.deviceImage.count(),
+    prisma.adminUser.count(),
   ]);
 
   console.log(
-    `seed เสร็จสิ้น: brands=${brandCount} models=${modelCount} devices=${deviceCount} images=${imageCount}`,
+    `seed เสร็จสิ้น: brands=${brandCount} models=${modelCount} devices=${deviceCount} ` +
+      `images=${imageCount} admins=${adminCount}`,
   );
 }
 
