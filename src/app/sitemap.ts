@@ -1,10 +1,11 @@
 import type { MetadataRoute } from 'next';
 import { getPublicDeviceSlugs } from '@/lib/queries/devices';
+import { getSiteUrl } from '@/lib/site-url';
 
 export const dynamic = 'force-dynamic';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = process.env.SITE_URL ?? 'http://localhost:3000';
+  const baseUrl = getSiteUrl();
   const devices = await getPublicDeviceSlugs();
 
   const staticRoutes: MetadataRoute.Sitemap = [

@@ -3,11 +3,52 @@
 บันทึกความรู้เฉพาะโปรเจกต์สำหรับ agent/session ถัดไป อัปเดตทุกครั้งที่พบข้อเท็จจริงใหม่
 
 ## สถานะปัจจุบัน
-- **Phase 1: เสร็จครบ (1.1–1.13)** — โครง Next.js 15 + TS + Tailwind 4 + Prisma 6 + migration + Prisma client singleton + seed idempotent (12 devices) + placeholder assets + `scripts/create-admin.ts` + `.dockerignore` + Dockerfile/compose/entrypoint
+- **Phase 1: เสร็จครบ (1.1–1.13)** — โครง Next.js 15 + TS + Tailwind 4 + Prisma 6 + migration + Prisma client singleton + seed idempotent (14 devices) + placeholder assets + `scripts/create-admin.ts` + `.dockerignore` + Dockerfile/compose/entrypoint
 - **Phase 2: Public Storefront เสร็จและตรวจแล้ว** — `/`, `/phones`, `/phones/[slug]`, sitemap, robots, `/api/images/[...path]`
+- **Security & Railway Hardening เสร็จและตรวจแล้ว (2026-10-16)** — branch `security/railway-hardening` (14 tasks): JSON-LD escape + regression test, image endpoint symlink defense, `/api/health`, seed non-destructive + `SEED_DEMO_ADMIN`, `SITE_URL`/Railway-aware base URL, demo-mode disclosure, Docker production fixes, vitest infra, README + `docs/DEPLOYMENT.md`
 - ทำจริงกับ PostgreSQL แล้ว (ไม่ใช่ UNVERIFIED) — migration apply + `migrate deploy` + seed idempotent + query ผ่าน Prisma client จริง
-- ยังไม่ทำ: **Phase 3 (Admin System)**, Phase 4 (Integration), Phase 5 (Testing/Docs)
-- **Path A (Docker) ยัง UNVERIFIED** — ยังไม่ได้รัน `docker compose up -d --build` ในเซสชันนี้ (ดูหัวข้อ Docker ด้านล่าง)
+- **Docker Path A ตรวจแล้ว (2026-10-16)** — `docker compose up -d --build` รันสำเร็จทั้ง stack, migration + seed + serve ผ่าน container จริง, healthy ทั้ง `db` และ `web`
+- ยังไม่ทำ: **Phase 3 (Admin System)**, Phase 4 (Integration)
+- ยัง **UNVERIFIED**: การ deploy ขึ้น Railway จริง (ไม่มี credential/target), Phase 3
+
+### Security & Railway Hardening — บทเรียนสำคัญ (2026-10-16)
+
+1. **JSON-LD ต้อง escape ก่อนใส่ `dangerouslySetInnerHTML`** — `JSON.stringify` ตรง ๆ ทำให้ข้อมูลจาก DB ที่มี `</script>` ปิดแท็กแล้วแทรก JS ได้ (XSS)
+   - ใช้ `serializeJsonLd()` จาก `src/lib/json-ld.ts` (escape `<` `>` `&` `\u2028` `\u2029`)
+   - มี regression test: `tests/unit/json-ld.test.ts`
+
+2. **`/api/images` ต้องกัน symlink escape ไม่ใช่แค่ path traversal** — `path.resolve` อย่างเดียวพอสำหรับ `..` แต่ไม่จับ symlink ที่ชี้ `/etc/passwd`
+   - ต้อง `realpath` แล้วเช็ค containment (`isInsideUploadRoot`) หลัง realpath
+   - 404 ต้อง `Cache-Control: no-store` (ห้าม cache ผลลบ เพราะไฟล์อาจมาทีหลัง)
+   - พิสูจน์แล้ว: สร้าง symlink → `/api/images/...` ตอบ 404 ไม่คืนเนื้อหา
+
+3. **Prisma `binaryTargets` ต้องตรงกับ base image** — image build (`node:24-bookworm-slim`) **ไม่มี** libssl ตอน `prisma generate` → auto-detect ได้ `openssl-1.1.x` แต่ runtime เป็น 3.0.x → `Prisma Client could not locate the Query Engine for runtime "debian-openssl-3.0.x"`
+   - แก้: ตั้ง `binaryTargets = ["native", "debian-openssl-3.0.x"]` ใน `prisma/schema.prisma` **เสมอ**
+
+4. **ห้าม COPY `node_modules/.bin/prisma` ใน Dockerfile** — `.bin/prisma` เป็น symlink → Docker dereference เป็นไฟล์จริง → `__dirname` ผิด → `ENOENT ... prisma_schema_build_bg.wasm`
+   - แก้: สร้าง symlink เอง (`ln -sf ../prisma/build/index.js`) แล้ว verify ด้วย `prisma --version` ตอน build
+
+5. **ห้าม COPY Prisma CLI ทีละแพ็กเกจ** — `@prisma/config` ต้องใช้ `effect` (dependency ข้ามแพ็กเกจ) → `Cannot find module 'effect'`
+   - แก้: แยก stage `cli` แล้ว `npm install prisma tsx bcryptjs` ให้ dependency ครบ แล้ว COPY `node_modules` ทั้งชุด (merge กับ standalone)
+
+6. **seed ต้องเป็น create-only โดยค่าเริ่มต้น** — `upsert` ที่มี `update:` เต็มจะทับราคา/สถานะที่ผู้ดูแลแก้ทุกครั้งที่รัน
+   - ค่าเริ่มต้น: `update: {}` (no-op); เขียนทับเฉพาะเมื่อ `SEED_OVERWRITE=true`
+   - พิสูจน์แล้ว: แก้ราคา → reseed → ราคาไม่เปลี่ยน; `SEED_OVERWRITE=true` → กลับเป็นค่า seed
+   - `SEED_DEMO_ADMIN` ถูก implement จริงแล้ว (เดิมมีแต่ในคอมเมนต์)
+
+7. **Railway: volume เป็น root** — image รัน non-root (uid 1001) จะเขียน `/app/uploads` ไม่ได้ ต้องตั้ง `RAILWAY_RUN_UID=0` (ดู `docs/DEPLOYMENT.md`)
+   - Railway inject `PORT` เอง — `server.js` + entrypoint อ่านอยู่แล้ว
+   - `SITE_URL` ควร normalize: Railway ให้ `RAILWAY_PUBLIC_DOMAIN` เป็น host เปล่า ๆ (ไม่มี scheme) → `src/lib/site-url.ts` เติม `https://` ให้และไม่ throw เมื่อค่าผิด
+
+8. **Demo data ต้อง disclose** — เว็บที่มี claim "ตรวจสภาพทุกเครื่อง"/"รับประกัน" โดยข้อมูลเป็นตัวอย่างคือ misleading
+   - `DEMO_MODE` (ค่าเริ่มต้น `true`) → `<DemoBanner>` + ข้อความกำกับที่ hero/หน้ารายละเอียด
+   - fail-safe: ถ้าไม่ได้ตั้งถือว่าเป็น demo (เตือนไว้ก่อน)
+
+9. **`npm audit` advisory อยู่ใน tooling ไม่ใช่ runtime path** — postcss (ฝังมากับ next) เป็น build-time CSS, prisma/@prisma/config/deepmerge-ts ใช้เฉพาะ CLI
+   - แก้ต้องอัป next 16 / prisma 7 (major) — บันทึกเหตุผลในคอมเมนต์ `Dockerfile`
+   - runtime ใช้ `@prisma/client` ซึ่งไม่อยู่ใน advisory
+
+10. **vitest config ต้องเป็น `.mts`** — `vitest.config.ts` ถูกโหลดเป็น CommonJS แล้วเตือน ESM; เปลี่ยนเป็น `vitest.config.mts` หายเตือน (package.json ไม่ได้ตั้ง `"type": "module"`)
 
 ### Phase 2 — บทเรียนสำคัญ (สำคัญมากสำหรับเฟสถัดไป)
 
@@ -126,11 +167,17 @@ sudo docker run -d --name sp-verify-db \
 - **สรุป: ไม่มี known high-severity vulnerability ที่ exploitable ในเส้นทาง runtime/request handling ของ production** ทั้งหมดเป็น build/lint/CLI tooling
 
 ## UNVERIFIED (ยังไม่ยืนยัน — อย่ากล่าวอ้างว่าผ่าน)
-- **Docker Path A** (`docker compose up -d --build`) — ยังไม่ได้รันในเซสชันนี้ เพราะไม่มี docker access; ไฟล์ Docker/entrypoint/compose พร้อมแล้วแต่ยัง **ไม่เคยทดสอบ end-to-end**
-- **Prisma client ใน standalone build จริง** — ยังไม่ทดสอบว่า `node .next/standalone/server.js` โหลด `@prisma/client` ได้ (ต้องมี `outputFileTracingIncludes`) → **ต้องตรวจใน Phase 5**
-- ไม่ได้ทดสอบ migrate ผ่าน network ของ docker compose (ทดสอบผ่าน 127.0.0.1 publish port เท่านั้น)
+- **Railway deploy จริง** — ไม่ได้ deploy ขึ้น Railway ในเซสชันนี้ (ไม่มี credential/target); config (`railway.json`, entrypoint, `SITE_URL` fallback) เตรียมไว้และตรวจด้วย unit test + Docker build บนเครื่องแล้ว
 - **Phase 3 (Admin System) ยังไม่เริ่ม** — ทุกอย่างเกี่ยวกับ admin (`login`, CRUD, upload endpoint ที่เขียนไฟล์จริง) ยังไม่มี
-- **ไม่มีการทดสอบอัตโนมัติ (vitest/playwright)** — การตรวจ Phase 1–2 ทำด้วย curl + build + browser manual ทั้งหมด
+- **การอัปโหลดรูปจริงผ่าน admin ยังไม่ทดสอบ** — image route ตรวจแล้วด้วยไฟล์ที่วางเอง (รวม symlink test) แต่ยังไม่มี flow อัปโหลดจากหลังบ้าน (Phase 3)
+
+### ตรวจแล้ว (Docker Path A) — 2026-10-16
+- `docker compose up -d --build` สำเร็จ, `db` + `web` healthy ทั้งคู่
+- `prisma migrate deploy` + `prisma db seed` (14 devices / 5 brands / 10 models / 1 admin) ทำงานใน container จริง
+- standalone build โหลด `@prisma/client` ได้ (แก้ binaryTargets แล้ว) — พิสูจน์ด้วย `/api/health` = `{"status":"ok","database":"up"}`
+- รูปคงอยู่หลัง restart (volume `uploads-data`), `/api/images/...` ตอบ 200
+- symlink escape ถูกบล็อก (404, no-store)
+- smoke test 21/21 ผ่าน; unit test 27/27 ผ่าน; lint + typecheck + build สะอาด
 
 ## หมายเหตุสำหรับเฟสถัดไป (Phase 3 — Admin System)
 - ต้องสร้างก่อน: `src/lib/auth/*` (session cookie, bcryptjs verify), middleware/guard ป้องกัน `/admin` + server actions

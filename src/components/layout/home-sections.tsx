@@ -4,14 +4,14 @@ import { Smartphone, ShieldCheck, BadgeCheck, MessageCircle } from 'lucide-react
 import type { SiteConfig } from '@/lib/site-config';
 import { ContactLinks } from '@/components/layout/contact-links';
 
-export function HeroSection({ config }: { config: SiteConfig }) {
+export function HeroSection({ config, demo }: { config: SiteConfig; demo: boolean }) {
   return (
     <section className="border-b border-slate-100 bg-gradient-to-b from-slate-50 to-white">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-2 lg:items-center">
         <div>
           <p className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
             <Smartphone className="h-3.5 w-3.5" aria-hidden="true" />
-            สมาร์ทโฟนมือสอง ตรวจสภาพทุกเครื่อง
+            {demo ? 'ตัวอย่างระบบร้านสมาร์ทโฟนมือสอง' : 'สมาร์ทโฟนมือสอง ตรวจสภาพทุกเครื่อง'}
           </p>
           <h1 className="mt-5 text-3xl font-semibold leading-tight tracking-tight text-slate-900 sm:text-4xl lg:text-5xl">
             สมาร์ทโฟนมือสองคุณภาพ
@@ -39,8 +39,12 @@ export function HeroSection({ config }: { config: SiteConfig }) {
         <ul className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
           <TrustItem
             icon={ShieldCheck}
-            title="ระบุสภาพตามจริง"
-            description="แจ้งเกรดสภาพ ตำหนิ และประวัติซ่อมของทุกเครื่อง"
+            title={demo ? 'ระบุสภาพในข้อมูลตัวอย่าง' : 'ระบุสภาพตามจริง'}
+            description={
+              demo
+                ? 'ข้อมูลสาธิตแสดงเกรดสภาพ ตำหนิ และประวัติซ่อมเป็นตัวอย่างเท่านั้น'
+                : 'แจ้งเกรดสภาพ ตำหนิ และประวัติซ่อมของทุกเครื่อง'
+            }
           />
           <TrustItem
             icon={BadgeCheck}

@@ -104,3 +104,15 @@ export function getSiteConfig(): SiteConfig {
 export function hasContactChannels(): boolean {
   return getSiteConfig().contacts.length > 0;
 }
+
+/**
+ * โหมดสาธิต (ค่าเริ่มต้น = เปิด) — ใช้แสดงข้อความกำกับว่าเนื้อหาเป็นข้อมูลตัวอย่าง
+ *
+ * ตั้ง DEMO_MODE="false" เมื่อนำขึ้นใช้งานจริงกับข้อมูลที่ตรวจสอบแล้วเท่านั้น
+ * ระหว่างที่เป็น true เว็บจะไม่กล่าวอ้างว่าตรวจสภาพ/รับประกันจริงโดยไม่มีหลักฐาน
+ */
+export function isDemoMode(): boolean {
+  const raw = process.env.DEMO_MODE?.trim().toLowerCase();
+  if (raw === 'false' || raw === '0' || raw === 'no') return false;
+  return true;
+}

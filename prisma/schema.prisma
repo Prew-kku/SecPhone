@@ -3,6 +3,10 @@
 
 generator client {
   provider = "prisma-client-js"
+  // ต้องระบุให้ตรงกับ runner image (Debian bookworm + OpenSSL 3.0.x) เสมอ
+  // ถ้าปล่อยให้ auto-detect จะได้ openssl-1.1.x ตอน build (image build ไม่มี libssl)
+  // แต่ runtime เป็น 3.0.x ทำให้ "Prisma Client could not locate the Query Engine"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
