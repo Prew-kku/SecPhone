@@ -1,0 +1,128 @@
+// SecondPhone Store — Prisma schema (v6)
+// อ้างอิง PLAN.md หัวข้อ 5 (Database Entities and Relationships)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum ConditionGrade {
+  A
+  B
+  C
+}
+
+enum DeviceStatus {
+  DRAFT
+  AVAILABLE
+  SOLD
+  ARCHIVED
+}
+
+enum AdminRole {
+  OWNER
+  ADMIN
+}
+
+// ---------- Models ----------
+
+model Brand {
+  id   String @id @default(cuid())
+  name String @unique
+  slug String @unique
+
+  models PhoneModel[]
+
+  @@map("brands")
+}
+
+model PhoneModel {
+  id          String   @id @default(cuid())
+  brandId     String
+  name        String
+  slug        String   @unique
+  releaseYear Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  brand   Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  devices Device[]
+
+  @@unique([brandId, name])
+  @@index([brandId])
+  @@map("phone_models")
+}
+
+model Device {
+  id               String         @id @default(cuid())
+  sku              String         @unique
+  slug             String         @unique
+  modelId          String
+  storageGb        Int
+  ramGb            Int?
+  color            String
+  priceThb         Int
+  conditionGrade   ConditionGrade
+  batteryHealthPct Int?
+  cosmeticDefects  String?
+  repairHistory    String?
+  accessories      String?
+  warrantyInfo     String?
+  description      String
+  status           DeviceStatus   @default(DRAFT)
+  isFeatured       Boolean        @default(false)
+  publishedAt      DateTime?
+  createdById      String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  deletedAt        DateTime?
+
+  model     PhoneModel    @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  createdBy AdminUser?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  images    DeviceImage[]
+
+  @@index([status, publishedAt])
+  @@index([modelId])
+  @@index([priceThb])
+  @@index([conditionGrade])
+  @@map("devices")
+}
+
+model DeviceImage {
+  id        String   @id @default(cuid())
+  deviceId  String
+  filename  String
+  altText   String?
+  sortOrder Int      @default(0)
+  isPrimary Boolean  @default(false)
+  width     Int?
+  height    Int?
+  createdAt DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, sortOrder])
+  @@map("device_images")
+}
+
+model AdminUser {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  displayName  String
+  role         AdminRole @default(ADMIN)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  createdDevices Device[]
+
+  @@map("admin_users")
+}

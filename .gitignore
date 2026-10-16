@@ -1,0 +1,38 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+/build
+
+# production
+/dist
+
+# misc
+.DS_Store
+*.pem
+*.log
+npm-debug.log*
+
+# env files — ห้าม commit ค่าจริง (ยกเว้น .env.example)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# testing
+/coverage
+
+# uploads (runtime volume)
+/uploads
