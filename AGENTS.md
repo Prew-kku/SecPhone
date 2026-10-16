@@ -5,11 +5,31 @@
 ## สถานะปัจจุบัน
 - **Phase 1: เสร็จครบ (1.1–1.13)** — โครง Next.js 15 + TS + Tailwind 4 + Prisma 6 + migration + Prisma client singleton + seed idempotent (14 devices) + placeholder assets + `scripts/create-admin.ts` + `.dockerignore` + Dockerfile/compose/entrypoint
 - **Phase 2: Public Storefront เสร็จและตรวจแล้ว** — `/`, `/phones`, `/phones/[slug]`, sitemap, robots, `/api/images/[...path]`
+- **Phase 3: Admin System เสร็จครบ (3.1–3.16) และตรวจใน container จริงแล้ว (2026-10-16)** — login/logout, session JWT (httpOnly cookie), bcrypt cost 12, rate limit, CRUD device, upload รูป (sharp→webp), status/featured/soft-delete, authorization matrix (`requireAdmin` ทุก server action)
 - **Security & Railway Hardening เสร็จและตรวจแล้ว (2026-10-16)** — branch `security/railway-hardening` (14 tasks): JSON-LD escape + regression test, image endpoint symlink defense, `/api/health`, seed non-destructive + `SEED_DEMO_ADMIN`, `SITE_URL`/Railway-aware base URL, demo-mode disclosure, Docker production fixes, vitest infra, README + `docs/DEPLOYMENT.md`
 - ทำจริงกับ PostgreSQL แล้ว (ไม่ใช่ UNVERIFIED) — migration apply + `migrate deploy` + seed idempotent + query ผ่าน Prisma client จริง
-- **Docker Path A ตรวจแล้ว (2026-10-16)** — `docker compose up -d --build` รันสำเร็จทั้ง stack, migration + seed + serve ผ่าน container จริง, healthy ทั้ง `db` และ `web`
-- ยังไม่ทำ: **Phase 3 (Admin System)**, Phase 4 (Integration)
-- ยัง **UNVERIFIED**: การ deploy ขึ้น Railway จริง (ไม่มี credential/target), Phase 3
+- **Docker Path A ตรวจซ้ำพร้อม Phase 3 (2026-10-16)** — `docker compose up -d --build` สำเร็จ, `db` + `web` healthy, login ผ่าน cookie จริงได้ (200), จำกัด login 5 ครั้ง/15 นาทีทำงาน (ครั้งที่ 6 = 429), รูปใน volume ยังเสิร์ฟหลัง `restart` (200), symlink/path traversal → 404, `sharp` โหลดได้ใน container (webp 76 bytes)
+- ยังไม่ทำ: **Phase 4 (Integration)**, **Phase 5 (Testing & Docs)**
+- ยัง **UNVERIFIED**: การ deploy ขึ้น Railway จริง (ไม่มี credential/target)
+
+### Phase 3 — Admin System บทเรียนสำคัญ (2026-10-16)
+
+1. **`isTrustedOrigin` ต้องอ่าน host จาก header ไม่ใช่ `request.url`** — ใน container `HOSTNAME=0.0.0.0` ทำให้ `request.url` เป็น `http://0.0.0.0:3000` แต่เบราว์เซอร์ส่ง `Origin: http://localhost:3000` → login POST ได้ **403 ทุกครั้ง** (เจอเฉพาะตอนรันใน Docker ไม่เจอใน unit test ที่สร้าง `Request` เอง)
+   - แก้: `requestHost()` อ่านลำดับ `X-Forwarded-Host` → `Host` → host ของ `request.url` (ดู `src/lib/auth/origin.ts`)
+   - มี regression test 3 ตัวใหม่ใน `tests/unit/slug-and-origin.test.ts` (เคส container 0.0.0.0, X-Forwarded-Host ของ Railway, และยังปฏิเสธ origin แปลก)
+   - **บทเรียน:** ตรรกะที่พึ่ง `request.url` ต้องทดสอบใน container จริง ไม่ใช่แค่ unit test
+
+2. **middleware ทำหน้าที่แค่ routing** — การตรวจสิทธิ์จริงอยู่ที่ `requireAdmin()` ในทุก server action (JWT + สถานะบัญชีใน DB + role) ไม่เชื่อ middleware อย่างเดียว
+
+3. **route handler ไม่มี origin/CSRF check ให้เอง** (ต่างจาก Server Action) → `/api/auth/login` และ `/api/auth/logout` เรียก `isTrustedOrigin()` เอง; logout ไม่ต้อง auth แต่ต้องผ่าน origin (พิสูจน์ใน container: ไม่มี Origin → 403)
+
+4. **login ต้องไม่เป็น oracle** — ไม่พบผู้ใช้ → เทียบ dummy hash (คงเวลา), ข้อความ error กลาง ๆ เหมือนกันทุกกรณี, ตรวจ `isActive` แล้วยังตอบกลาง ๆ
+
+5. **volume `/app/uploads` ต้องเขียนได้โดย non-root (uid 1001)** — ตรวจแล้วในคอนเทนเนอร์: `touch /app/uploads/devices/.writetest` ผ่าน; Railway volume เป็น root ต้องตั้ง `RAILWAY_RUN_UID=0` (ดู `docs/DEPLOYMENT.md`)
+
+6. **rate limiter เป็น in-memory** — จำกัดต่อ process ไม่ distributed; บน Railway หลาย instance/restart ตัวนับแยกกัน → เป็น defense-in-depth เท่านั้น (ไม่กล่าวอ้างว่า distributed)
+
+7. **`sharp` ถูก trace เข้า `.next/standalone`** — พบ `@img/sharp-linux-x64-0.35.5.node` ใน standalone output → Docker build COPY ได้; ยืนยันด้วย `node -e "require('sharp')"` ใน container
 
 ### Security & Railway Hardening — บทเรียนสำคัญ (2026-10-16)
 
@@ -168,8 +188,7 @@ sudo docker run -d --name sp-verify-db \
 
 ## UNVERIFIED (ยังไม่ยืนยัน — อย่ากล่าวอ้างว่าผ่าน)
 - **Railway deploy จริง** — ไม่ได้ deploy ขึ้น Railway ในเซสชันนี้ (ไม่มี credential/target); config (`railway.json`, entrypoint, `SITE_URL` fallback) เตรียมไว้และตรวจด้วย unit test + Docker build บนเครื่องแล้ว
-- **Phase 3 (Admin System) ยังไม่เริ่ม** — ทุกอย่างเกี่ยวกับ admin (`login`, CRUD, upload endpoint ที่เขียนไฟล์จริง) ยังไม่มี
-- **การอัปโหลดรูปจริงผ่าน admin ยังไม่ทดสอบ** — image route ตรวจแล้วด้วยไฟล์ที่วางเอง (รวม symlink test) แต่ยังไม่มี flow อัปโหลดจากหลังบ้าน (Phase 3)
+- **การอัปโหลดรูปจริงผ่าน admin** — พิสูจน์แล้วว่า pipeline `sharp` ทำงาน (เขียน webp ผ่าน `sharp` ใน container แล้วเสิร์ฟผ่าน `/api/images` ได้ 200); flow อัปโหลดผ่าน UI เบราว์เซอร์ยังไม่ได้ทดสอบ end-to-end (ข้อจำกัดของ browser tooling ในเซสชันนี้) แต่ server action + storage ถูกทดสอบด้วย integration test
 
 ### ตรวจแล้ว (Docker Path A) — 2026-10-16
 - `docker compose up -d --build` สำเร็จ, `db` + `web` healthy ทั้งคู่
@@ -179,12 +198,14 @@ sudo docker run -d --name sp-verify-db \
 - symlink escape ถูกบล็อก (404, no-store)
 - smoke test 21/21 ผ่าน; unit test 27/27 ผ่าน; lint + typecheck + build สะอาด
 
-## หมายเหตุสำหรับเฟสถัดไป (Phase 3 — Admin System)
-- ต้องสร้างก่อน: `src/lib/auth/*` (session cookie, bcryptjs verify), middleware/guard ป้องกัน `/admin` + server actions
+## หมายเหตุสำหรับเฟสถัดไป (Phase 4 — Integration)
+- **Phase 3 เสร็จแล้ว** (login, CRUD, upload, authorization matrix) — โครงที่ใช้: `src/app/admin/{login,(protected)/*}`, `src/components/admin/*`, `src/lib/{auth,mutations,queries,storage,validation}/*`, `src/app/api/{auth/*,images/[...path],health}`
+- ต่อที่เหลือของ Phase 4: ตรวจ contact links จาก env (`LINE_ID`/`FACEBOOK_URL`/`PHONE_NUMBER`), loading/error/empty states ที่ยังขาด, และกลั่นกรอง integration ให้ครบ
 - **`UPLOAD_DIR` เขียนไฟล์:** ใช้ `getUploadRoot()` จาก `src/lib/storage/upload-dir.ts` เป็นฐานเดียวกับ image route เพื่อให้อ่าน/เขียนตรงกัน
 - ไฟล์ที่อัปโหลดต้องตั้งชื่อ `<uuid-v4>.webp` ใต้ `devices/<deviceId>/` เพื่อให้ผ่าน allowlist ของ `/api/images`
 - ถ้ารัน `next start` บนเครื่อง ให้ระวังว่า `output: standalone` เตือน — ใน dev/verify ใช้ `npm run dev` หรือ `node .next/standalone/server.js`
 - `lucide-react@1.57` ไม่มี brand icon — ใช้ `Globe`/`MessageCircle`/`Phone`
+- **ห้าม finalize การ login โดยไม่รันใน container** — บทเรียน origin/`request.url` (ดูหัวข้อ Phase 3 ข้อ 1)
 
 ## หมายเหตุสำหรับเฟสถัดไป (Phase 1 เดิม — เก็บไว้)
 - Task 1.12 ต้องพิจารณาย้าย `prisma` CLI เข้า dependencies **หรือ** คัดลอกเข้า runner image ตาม PLAN §9.2 (ปัจจุบันยังเป็น devDependency → entrypoint ต้องมี prisma CLI ให้ `migrate deploy` ได้)
