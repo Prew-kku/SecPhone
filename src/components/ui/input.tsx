@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 
-export function Input({ className, ...props }: React.ComponentPropsWithoutRef<'input'>) {
+export function Input({ className, ...props }: React.ComponentProps<'input'>) {
   return (
     <input
       className={cn(
@@ -12,7 +12,7 @@ export function Input({ className, ...props }: React.ComponentPropsWithoutRef<'i
   );
 }
 
-export function Select({ className, ...props }: React.ComponentPropsWithoutRef<'select'>) {
+export function Select({ className, ...props }: React.ComponentProps<'select'>) {
   return (
     <select
       className={cn(
@@ -24,13 +24,13 @@ export function Select({ className, ...props }: React.ComponentPropsWithoutRef<'
   );
 }
 
-export function Label({ className, ...props }: React.ComponentPropsWithoutRef<'label'>) {
+export function Label({ className, ...props }: React.ComponentProps<'label'>) {
   return (
     <label className={cn('mb-1.5 block text-sm font-medium text-slate-700', className)} {...props} />
   );
 }
 
-export function Textarea({ className, ...props }: React.ComponentPropsWithoutRef<'textarea'>) {
+export function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
   return (
     <textarea
       className={cn(

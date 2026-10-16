@@ -1,11 +1,8 @@
 import type { Metadata } from 'next';
 import '@fontsource-variable/noto-sans-thai';
 import './globals.css';
-import { getSiteConfig, isDemoMode } from '@/lib/site-config';
+import { getSiteConfig } from '@/lib/site-config';
 import { getSiteUrl } from '@/lib/site-url';
-import { SiteHeader } from '@/components/layout/site-header';
-import { SiteFooter } from '@/components/layout/site-footer';
-import { DemoBanner } from '@/components/layout/demo-banner';
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = getSiteConfig();
@@ -27,9 +24,12 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+/**
+ * Root layout: มีเฉพาะ <html>/<body> และ accessibility skip link
+ * chrome ของหน้า public (header/footer/banner) อยู่ใน `(public)/layout.tsx`
+ * ส่วนหน้า admin มี shell ของตัวเองใน `admin/(protected)/layout.tsx`
+ */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const config = getSiteConfig();
-
   return (
     <html lang="th">
       <body className="flex min-h-screen flex-col bg-white font-sans text-slate-900 antialiased">
@@ -39,12 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           ข้ามไปยังเนื้อหาหลัก
         </a>
-        <SiteHeader siteName={config.name} />
-        {isDemoMode() ? <DemoBanner /> : null}
-        <div id="main" className="flex-1">
-          {children}
-        </div>
-        <SiteFooter config={config} />
+        {children}
       </body>
     </html>
   );

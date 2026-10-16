@@ -166,6 +166,41 @@ mount volume ที่ `/app/uploads` แล้วตั้ง `RAILWAY_RUN_UID=
 - **healthcheck hostname** — มาจาก `healthcheck.railway.app` ถ้ามี middleware จำกัด host ต้อง allow host นี้
 - **volumes ไม่ถูก mount ตอน build** — อย่าเขียนรูปตอน build
 - **pre-deploy** — ถ้าใช้ pre-deploy command และต้องแตะ volume ให้ย้าย logic เข้า start command (entrypoint)
+- **TRUST_PROXY_HEADERS** — Railway เป็น reverse proxy จึงควรตั้ง `TRUST_PROXY_HEADERS=true`
+  เพื่อให้การตรวจ Origin และการนับ rate limit เห็น host/IP จริง (ถ้าไม่ตั้ง ระบบยังทำงานได้
+  แต่จะไม่เชื่อ `X-Forwarded-Host`/`X-Forwarded-For`)
+
+### พิสูจน์ว่ารูปคงอยู่ข้าม deploy (ทำได้จริง)
+
+รูปสินค้าอยู่ใน volume ที่ mount ที่ `/app/uploads` ไม่ใช่ layer ของ image จึงต้องพิสูจน์ว่า
+"เขียนรูป → redeploy/restart → รูปยังอยู่และเสิร์ฟได้ 200" ทำตามลำดับ
+
+```bash
+# 0) เตรียมค่า (สมมติมี admin ที่ล็อกอินได้)
+BASE_URL=https://<domain>
+
+# 1) login เอา cookie
+curl -s -c /tmp/sp.jar -X POST "$BASE_URL/api/auth/login" \
+  -H 'Content-Type: application/json' \
+  -H "Origin: $BASE_URL" \
+  -d '{"email":"'"$ADMIN_EMAIL"'","password":"'"$ADMIN_PASSWORD"'"}'
+
+# 2) อัปโหลดรูป (ต้องเป็นไฟล์จริง >1MB ได้ เพื่อพิสูจน์ขีดจำกัดใหม่)
+#    endpoint: POST /api/admin/devices/<deviceId>/images  (multipart field name = "file")
+curl -s -b /tmp/sp.jar -X POST "$BASE_URL/api/admin/devices/<deviceId>/images" \
+  -H "Origin: $BASE_URL" \
+  -F 'file=@./large-sample.jpg'      # ไฟล์จริง >1MB
+
+# 3) จด path รูปที่ได้จากหน้า /admin/phones/<id>/edit แล้วยิงตรง
+IMG="/api/images/devices/<deviceId>/<uuid>.webp"
+curl -s -o /dev/null -w '%{http_code}\n' "$BASE_URL$IMG"     # ต้อง 200
+```
+
+จากนั้น **redeploy** (หรือ restart service) แล้วยิง `$IMG` ซ้ำอีกครั้ง — ต้องยังได้ `200`
+ถ้าได้ `404` แสดงว่าไม่ได้ใช้ volume (หรือ path ไม่ตรง) ให้กลับไปดูหัวข้อ Railway volume permissions
+
+> ถ้าใช้ Docker Compose ให้ทดสอบแบบเดียวกันด้วย `docker compose restart web` (หรือ `up -d --build`)
+> แล้วยิง path เดิม — ต้องได้ 200 และไฟล์ใน `docker compose exec web ls /app/uploads/devices/<id>` ต้องอยู่
 
 ### ตรวจจริงบน Railway (ยังไม่ได้ทำในเซสชันนี้)
 
